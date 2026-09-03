@@ -1,0 +1,9 @@
+# Local secrets - never commit this file
+config.h
+
+# ESP-IDF build artifacts
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock

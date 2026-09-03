@@ -1,42 +1,95 @@
-# ESP32 Real-Time Electrical Telemetry System (Parallel vs. Sequential FreeRTOS Architectures)
+# ESP32 Real-Time Electrical Telemetry System
+### Parallel FreeRTOS Architecture
 
-Undergraduate thesis project comparing sequential and parallel FreeRTOS task architectures on a dual-core ESP32 for real-time electrical telemetry, using a Modbus TCP to MQTT data pipeline.
+Undergraduate thesis project implementing a parallel task architecture on a dual-core ESP32 for real-time electrical telemetry.
+
+The system reads electrical measurements from an ABB M1M20 power meter using Modbus TCP and publishes the data to an MQTT broker for monitoring.
 
 ## Overview
 
-The system polls an ABB M1M20 power meter over Modbus TCP and publishes readings to an MQTT broker (HiveMQ) for real-time monitoring. As part of the thesis, two architectures were designed and benchmarked:
+Modbus polling and MQTT publishing are separated into independent FreeRTOS tasks. The Modbus task runs on Core 1, while the MQTT task runs on Core 0. The two tasks exchange measurement data through a FreeRTOS queue.
 
-- **Sequential:** a single task handles both Modbus polling and MQTT publishing.
-- **Parallel:** Modbus polling runs on Core 1, MQTT publishing on Core 0, communicating via FreeRTOS queues.
+## What I Worked On
 
-This repository contains the firmware for the **parallel architecture** only.
+- Implemented a parallel FreeRTOS architecture on the dual-core ESP32.
+- Separated Modbus TCP polling and MQTT publishing into independent tasks.
+- Used a FreeRTOS queue to pass measurement data between tasks.
+- Investigated a message ID wraparound issue that caused incorrect delay measurements and fixed it using a monotonic-clock check for stale entries.
+- Traced a processing-time limitation to a 1-second `SO_RCVTIMEO` socket timeout.
+- Published telemetry data over MQTT with QoS 1, using message acknowledgments to measure delay and processing time per sample.
+- Connected the ESP32 telemetry system to HiveMQ, Telegraf, InfluxDB, and Grafana for data collection and monitoring.
+- Ran tests at sampling frequencies from 1-10 Hz and analyzed delay, RTT, jitter, and CPU utilization.
 
-## Key Engineering Highlights
+## System
 
-- Architected a parallel processing design isolating Modbus TCP polling (Core 1) from MQTT publishing (Core 0), communicating via FreeRTOS queues, resolving a blocking bottleneck present in the sequential architecture.
-- Diagnosed and resolved a critical firmware bug involving message ID wraparound collisions using a monotonic-clock staleness check.
-- Identified a socket-level bottleneck (1-second `SO_RCVTIMEO` timeout) creating a processing-time ceiling in the parallel architecture.
-- Built a full end-to-end IIoT monitoring stack using HiveMQ, Telegraf, InfluxDB, and Grafana, bridged via a FastAPI control server on a self-managed Linux VPS.
-- Automated data collection across 1–10 Hz sampling frequencies and performed statistical analysis on delay, RTT, jitter, and CPU utilization.
+```text
+ABB M1M20
+    |
+    | Modbus TCP
+    v
+ESP32 + W5500
+    |
+    +-- Core 1: Modbus Polling
+    |
+    +-- Core 0: MQTT Publishing (QoS 1)
+             |
+             | MQTT
+             v
+          HiveMQ
+             |
+             v
+          Telegraf
+             |
+             v
+          InfluxDB
+             |
+             v
+          Grafana
+```
+
+A separate FastAPI server was used for system control and configuration.
 
 ## Tech Stack
 
-ESP32 (W5500 Ethernet) · FreeRTOS · C · Modbus TCP · MQTT · Python (FastAPI) · InfluxDB · Grafana · Telegraf · Linux VPS
+**Embedded:** ESP32, W5500 Ethernet, C, ESP-IDF, FreeRTOS
 
-## Setup
+**Protocols:** Modbus TCP, MQTT (QoS 1)
 
-1. Copy `config.h.example` to `config.h`.
-2. Fill in your own WiFi/network, MQTT broker, and power meter register details in `config.h`.
-3. Build and flash with ESP-IDF.
+**Monitoring & Data:** HiveMQ, Telegraf, InfluxDB, Grafana
 
-`config.h` is excluded from version control via `.gitignore` — never commit real credentials.
+**Backend:** Python, FastAPI, Linux VPS
+
+## Testing
+
+The architecture was tested at sampling frequencies between 1 and 10 Hz. The measurements collected during testing included:
+
+- Total delay
+- MQTT round-trip time (RTT)
+- Jitter
+- CPU utilization
+- Number of transmitted samples
 
 ## Repository Contents
 
-- `main.c` — ESP32 firmware (parallel architecture)
-- `config.h.example` — configuration template (copy to `config.h` and fill in your own values)
-- `.gitignore` — excludes local secrets and build artifacts
+```text
+.
+├── main.c
+├── config.h
+└── .gitignore
+```
 
-## Note
+- `main.c` - ESP32 firmware for the parallel architecture
+- `config.h` - example configuration file
+- `.gitignore` - excludes local configuration and build files
 
-This repository contains the firmware component of the thesis. The Python monitoring stack (FastAPI control bridge, sampling scheduler) is not yet included here.
+## Setup
+
+1. Copy `config.h` to `config.h`.
+2. Add your own network, MQTT broker, and power meter configuration.
+3. Build and flash the firmware using ESP-IDF.
+
+`config.h` is excluded from version control. Do not commit credentials or other private configuration.
+
+## Notes
+
+This repository currently contains the ESP32 firmware for the parallel architecture. The Python monitoring and control components, including the FastAPI server and sampling scheduler, are not included yet.
